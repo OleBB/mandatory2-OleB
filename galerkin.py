@@ -76,9 +76,9 @@ class FunctionSpace:
         return P
 
     def eval_derivative_basis_function_all(self, Xj, k=1):
-        P = np.zeros((len(Xj), self.N+1))
-        for j in range(self.N+1):
-            P[:,j] = self.eval_derivative_basis_function_all(Xj,j,k=1)
+        P = np.zeros((len(Xj), self.N + 1))
+        for j in range(self.N + 1):
+            P[:, j] = self.evaluate_derivative_basis_function(Xj, j, k=1)
         return P
         #raise NotImplementedError #må implementeres
 
@@ -104,6 +104,10 @@ class Legendre(FunctionSpace):
     def __init__(self, N, domain=(-1, 1)):
         FunctionSpace.__init__(self, N, domain=domain)
 
+    @property
+    def reference_domain(self):
+        return (-1, 1)
+
     def basis_function(self, j, sympy=False):
         if sympy:
             return sp.legendre(j, x)
@@ -113,7 +117,7 @@ class Legendre(FunctionSpace):
         return self.basis_function(j).deriv(k)
 
     def L2_norm_sq(self, N):
-        r = self.reference_domain
+        #her hadde filmon noe
         L2_norms_sq = np.zeros(N+1)
         for i in range(N+1):
             L2_norms_sq[i] = 2/(2*i+1)
@@ -121,7 +125,7 @@ class Legendre(FunctionSpace):
         #raise NotImplementedError #må implementeres
 
     def mass_matrix(self):
-        L2_norms_sq = self.L2_norm_sq(self.N)
+        L2_norms_sq = self.L2_norm_sq(self.N) #simon n+1?
         A = sparse.diags([L2_norms_sq], [0], (self.N+1, self.N+1), format='csr')
         return A
         #raise NotImplementedError #må implementeres. den er diagonal. se lecture 8. kan lages dense. eller scipy sparse.
@@ -133,10 +137,13 @@ class Legendre(FunctionSpace):
 
 """---------------------------------CHEBYSHEV-----------------------------------"""
 class Chebyshev(FunctionSpace):
-
     def __init__(self, N, domain=(-1, 1)):
         FunctionSpace.__init__(self, N, domain=domain)
-
+    
+    @property
+    def reference_domain(self):
+        return (-1, 1)
+    
     def basis_function(self, j, sympy=False):
         if sympy:
             return sp.cos(j*sp.acos(x))
@@ -150,10 +157,10 @@ class Chebyshev(FunctionSpace):
 
     def L2_norm_sq(self, N):
         r = self.reference_domain
-        L2_norms = np.zeros(N+1)
-        L2_norms = np.ones(N+1)*np.pi/2
-        L2_norms[0] *=2
-        return L2_norms
+        L2 = np.zeros(N + 1)
+        L2 = np.ones(N + 1) * np.pi / 2
+        L2[0] *= 2
+        return L2
         #raise NotImplementedError #må implementeres
 
     def mass_matrix(self):
@@ -212,14 +219,15 @@ class Sines(Trigonometric):
         return lambda Xj: np.sin((j+1)*np.pi*Xj)
 
     def derivative_basis_function(self, j, k=1):
-        scale = ((j+1)*np.pi)**k * {0: 1, 1: -1}[(k//2) % 2]
+        scale = ((j + 1) * np.pi) ** k * {0: 1, 1: 1, 2: -1, 3: -1}[k % 4]
+        #scale = ((j+1)*np.pi)**k * {0: 1, 1: -1}[(k//2) % 2]
         if k % 2 == 0:
             return lambda Xj: scale*np.sin((j+1)*np.pi*Xj)
         else:
             return lambda Xj: scale*np.cos((j+1)*np.pi*Xj)
 
     def L2_norm_sq(self, N):
-        return 0.5
+        return 0.5 * np.ones(N+1)
 
 """---------------------------------COS-----------------------------------"""
 class Cosines(Trigonometric):
@@ -276,33 +284,6 @@ class Neumann:
 
 
 class Composite(FunctionSpace):
-    """Base class for function spaces created as linear combinations of orthogonal basis functions
-
-    The composite basis functions are defined using the orthogonal basis functions
-    (Chebyshev or Legendre) and a stencil matrix S. The stencil matrix S is used
-    such that basis function i is
-
-    .. math::
-
-        \psi_i = \sum_{j=0}^N S_{ij} Q_j
-
-    where :math:`Q_i` can be either the i'th Chebyshev or Legendre polynomial
-
-    For example, both Chebyshev and Legendre have Dirichlet basis functions
-
-    .. math::
-
-        \psi_i = Q_i-Q_{i+2}
-
-    Here the stencil matrix will be
-
-    .. math::
-
-        s_{ij} = \delta_{ij} - \delta_{i+2, j}, \quad (i, j) \in (0, 1, \ldots, N) \times (0, 1, \ldots, N+2)
-
-    Note that the stencil matrix is of shape :math:`(N+1) \times (N+3)`.
-    """
-
     def eval(self, uh, xj):
         xj = np.atleast_1d(xj)
         Xj = map_reference_domain(xj, self.domain, self.reference_domain)
@@ -333,6 +314,8 @@ class NeumannLegendre(Composite, Legendre):
         Legendre.__init__(self,N,domain=domain)
         self.B = Neumann(bc, domain, self.reference_domain)
         self.S = sparse.diags((1,-1),(0,2), shape=(N+1, N+3), format='csr')
+        for i in range(N + 1):
+            self.S[i, i + 2] = -i * (i + 1) / ((i + 2) * (i + 3))
         #raise NotImplementedError #må implementeres
 
     def basis_function(self, j, sympy=False):
@@ -507,6 +490,7 @@ def test_convection_diffusion():
         print(
             f'test_convection_diffusion: L2 error = {err:2.4e}, N = {N}, {V.__class__.__name__}')
         assert err < 1e-3
+ 
 
 
 if __name__ == '__main__':
